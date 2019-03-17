@@ -9,8 +9,9 @@
 //[this, 300, 999] spawn TG_fnc_vehicleRespawn; //where 300 seconds will make the respawn wait for 5 min, unlimited times
 
 if !(isServer) exitWith {};  //exit if called by a client and not the server
-
+if (!isnil {_this select 0 getVariable "timeToRespawn"}) exitWith {}; //possible bug fix for double calling of the script
 //initialization section*******************************************************************************************************
+
 
 //variables
 _thisVehicle = _this select 0;
@@ -33,11 +34,15 @@ _backpacks = getBackpackCargo _thisVehicle;
 _thisVehicle setVariable ["customCargo", [_weapons, _magazines, _items, _backpacks], true];
 
 
+//fix for the UAV crew
+if  (_thisVehicle in allUnitsUAV) then {createVehiclecrew _thisVehicle};
+
+
 // add the event handle
-_thisVehicle removeAllMPEventHandlers "mpKilled"; //this is to avoid add another event handle
-_thisVehicle addMPEventHandler ["mpKilled", {
+_thisVehicle removeAllMPEventHandlers "mpkilled"; //this is to avoid add another event handle
+_thisVehicle addMPEventHandler ["mpkilled", {
 	params ["_unit", "_killer", "_instigator", "_useEffects"];
-	if !(isServer) exitWith {};
+	if !(isServer) exitWith {}; 	
 	_unit removeAllMPEventHandlers "mpkilled";
 	_unit spawn RTG_RespawnCode;
 }];
@@ -46,6 +51,78 @@ if (count ((missionConfigFile >> "MissionSQM" >> "Mission" >> "Entities" ) call 
 	sleep 2;
 	Hint "WARNING MISSION MAKER. THERE IS A VEHICLE WITH OUT VARIABLE, TO AVOID ERRORS GIVE VARIABLES TO ALL VEHICLES";
 };
+
+//RTG prototype script 
+
+_thisVehicle setVariable ["helplift", [], true];
+[
+	_thisVehicle,											
+	"Unflip Vehicle",										
+	"\a3\ui_f\data\IGUI\Cfg\Actions\autohover_ca.paa",	
+	"\a3\ui_f\data\IGUI\Cfg\Actions\autohover_ca.paa",	
+	"_this distance _target < 8 and ((vectorUp _target) vectorCos (surfaceNormal getPos _target) <0.5 && _target == vehicle _target && (vehicle player) == player && alive _target)",
+	"_caller distance _target < 8",						
+	{
+	_playersHelping = ((_target getVariable "helplift") - [player]);
+	_target setVariable ["helplift",  (_playersHelping + [player]), true];
+	systemchat "Attempting to unflip the vehicle, ask more players to also hold this action";
+	},													
+	{
+	//unflip possibility
+		if !(((vectorUp _target) vectorCos (surfaceNormal getPos _target) <0.5 && _target == vehicle _target && (vehicle player) == player && alive _target)) exitwith {};
+		_help = count (_target getVariable "helplift");
+		_vehicleMass = (getmass _target);
+		if (_vehicleMass > 14000) then {_vehicleMass = 14000};
+		_helpMassDiscount = 1000*_help;
+		_WholeValue = _vehicleMass;
+		_MyNumber = _helpMassDiscount;
+		_fraction = (_MyNumber/_WholeValue);
+		_pecentage = floor (200*_fraction);
+		_text = format ["<t size='2.0'>You have %1%2 of chance to flip this vehicle by finishing this action</t>", _pecentage, "%"];
+		"unflip" cutText [_text, "PLAIN DOWN", 0.5, true, true];
+	//
+	},													
+	{
+	//unflip possibility
+		if !(((vectorUp _target) vectorCos (surfaceNormal getPos _target) <0.5 && _target == vehicle _target && (vehicle player) == player && alive _target)) exitwith {};
+		_help = count (_target getVariable "helplift");
+		_vehicleMass = (getmass _target);
+		if (_vehicleMass > 14000) then {_vehicleMass = 14000};
+		_helpMassDiscount = 1000*_help;
+		_WholeValue = _vehicleMass;
+		_MyNumber = _helpMassDiscount;
+		_fraction = (_MyNumber/_WholeValue);
+		_pecentage = floor (200*_fraction);
+		if ((random 100) < _pecentage) then {
+			_text = format ["<t size=2.0><t color='#00DF00'>Vehicle has bem successfully flipped upside</t>"];
+			"unflip" cutText  [_text, "PLAIN DOWN",1, true, true];
+			_vehicle = _target;
+			_safeposs = [getPosATL _vehicle, 0, 50, 8, 0, 0.7, 0, [], []] call BIS_fnc_findSafePos;
+			if (count _safeposs != 3) then {_safeposs = getposatl _vehicle};	
+			_safeposs = getPosATL _vehicle;
+			_vehicle setPosATL [(_safeposs select 0),(_safeposs select 1),((_safeposs select 2) + 3)];
+			[_vehicle,[0,0,1]] remoteExec ["setVectorUp",_vehicle];
+			_vehicle setPosATL [(_safeposs select 0),(_safeposs select 1),((_safeposs select 2) + 2)];
+		} else {
+			_text = format ["<t size=2.0><t color='#FF0000'>You have failed to flip the vehicle</t>"];
+			"unflip" cutText  [_text, "PLAIN DOWN",1, true, true];
+		};
+	_playersHelping = ((_target getVariable "helplift") - [player]);
+	_target setVariable ["helplift",  (_playersHelping - [player]), true];
+	//
+	},				
+	{
+	_text = format ["<t size=2.0><t color='#FF0000'>Canceled</t>"];
+	"unflip" cutText  [_text, "PLAIN DOWN",1, true, true];
+	_playersHelping = ((_target getVariable "helplift") - [player]);
+	_target setVariable ["helplift",  (_playersHelping - [player]), true];
+	},													
+	[],													
+	20,													
+	99,													
+	false,												
+	false												
+] remoteExec ["BIS_fnc_holdActionAdd", 0, true];
 
 //Roque_THE_GAME respawn code
 if (!isNil {RTG_RespawnCode}) exitWith {}; //dont need to make the code more than once
@@ -88,7 +165,7 @@ if ((damage _thisVehicle) == 1) then {
 		_doRespawn = false;
 		_currentTickets = _tgTickets;
 		_currentTickets = _tgTickets - 1; // is this supouse to start from 0 or 1?
-		if (_currentTickets > 0) then {
+		if (_currentTickets > 0) then { 
 			_doRespawn = true;
 			_plural = "";
 			if (_currentTickets > 1) then {_plural = "s"} else {_plural = ""};
@@ -102,20 +179,20 @@ if ((damage _thisVehicle) == 1) then {
 		};
 		if (_doRespawn) then {
 			sleep _timeToRespawn;
-			_object = (str _thisVehicle);
-			_configWithName = ((missionConfigFile >> "MissionSQM" >> "Mission" >> "Entities" ) call BIS_fnc_returnChildren select {getText (_x >> "Attributes" >> "name") == _object});
+			_object = (str _thisVehicle); 
+			_configWithName = ((missionConfigFile >> "MissionSQM" >> "Mission" >> "Entities" ) call BIS_fnc_returnChildren select {getText (_x >> "Attributes" >> "name") == _object});   
 			_ObjectInitString = getText ((_configWithName select 0) >> "Attributes" >> "init");
 			_VehicleModifications = [_thisVehicle,""] call BIS_fnc_exportVehicle;
 			deleteVehicle _thisVehicle;
 			sleep 1;//In case the vehicle is in the same place
-			_newVehicle = _classnameOfThisVehicle createVehicle _safeSpawnLocation;
+			_newVehicle = _classnameOfThisVehicle createVehicle _safeSpawnLocation;	
 			missionNamespace setVariable [_newVehicleString, _newVehicle, true];
 			[_newVehicle, _newVehicleString] remoteExec ["setVehicleVarName",0];
 			sleep 1;
 			_instalVehicleModifications = ("_this = " + (str _newVehicle)+ ";"+_VehicleModifications);
 			_Init = ("this = " + (str _newVehicle)+ ";" + _ObjectInitString);
 			call compileFinal _instalVehicleModifications;
-			[(compileFinal _Init)] remoteExec ["call",0,true];
+			[(compileFinal _Init)] remoteExec ["call",0,true]; 
 			_newVehicle setDir _directionToPlaceAt;
 			_newVehicle setPosATL _positionToPlaceAt;
 			//replace gear with gear loaded in editor
@@ -123,8 +200,8 @@ if ((damage _thisVehicle) == 1) then {
 			clearMagazineCargoGlobal _newVehicle;
 			clearItemCargoGlobal _newVehicle;
 			clearBackpackCargoGlobal _newVehicle;
-
-
+			
+			
 			if (count (_weapons select 0) > 0) then {
 				{_newVehicle addWeaponCargoGlobal [_weapons select 0 select _forEachIndex, _weapons select 1 select _forEachIndex];} forEach _weapons;
 			};
